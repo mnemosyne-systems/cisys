@@ -46,7 +46,24 @@ import java.util.concurrent.atomic.AtomicBoolean;
  void recover(@Observes StartupEvent event){QuarkusTransaction.requiringNew().run(()->Build.update("status = 'FAILED', finishedAt = ?1, output = 'Server restarted during build' where status = 'RUNNING'",Instant.now()));}
  Build submit(Long projectId,String actor,String url,BuildResource.RunRequest request){
   if(!busy.compareAndSet(false,true))throw new WebApplicationException("Runner busy",409);
-  try {Build b=QuarkusTransaction.requiringNew().call(()->{Build x=new Build();x.projectId=projectId;x.requestedBy=actor;x.status="RUNNING";x.startedAt=Instant.now();x.output="Preparing checkout";x.persist();return x;});executor.submit(()->run(b.id,url,request));return b;}catch(RuntimeException e){busy.set(false);throw e;}
+  try {
+   Build build=QuarkusTransaction.requiringNew().call(()->{
+    Build b=new Build();
+    b.projectId=projectId;
+    b.requestedBy=actor;
+    b.status="RUNNING";
+    b.startedAt=Instant.now();
+    b.output="Preparing checkout";
+    b.branch=request.branch();
+    b.image=request.image();
+    b.command=request.command();
+    b.credentialRef=request.credentialRef();
+    b.persist();
+    return b;
+   });
+   executor.submit(()->run(build.id,url,request));
+   return build;
+  } catch(RuntimeException e){busy.set(false);throw e;}
  }
  private void run(Long id,String url,BuildResource.RunRequest request){
   Path dir=null;String name="cisys-build-"+id, output="",revision=null,status="FAILED";

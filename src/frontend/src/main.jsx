@@ -210,7 +210,20 @@ function App() {
               {user.roles.includes('admin') && <div className="form-field"><Label htmlFor="git-credential">Private Git credential environment variable (optional)</Label><Input id="git-credential" value={credentialRef} onChange={(e) => setCredentialRef(e.target.value)} placeholder="CISYS_GIT_PROJECT"/></div>}
               <Button disabled={buildBusy || !image || builds.some((b) => b.status === 'RUNNING')}>{buildBusy ? 'Starting…' : 'Run build'}</Button>
             </form>}
-            {builds.length === 0 ? <p>No builds yet.</p> : builds.map((b) => <details key={b.id}><summary>#{b.id} · {b.status} · {new Date(b.startedAt).toLocaleString()} {b.revision ? `· ${b.revision.slice(0, 12)}` : ''}</summary><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{b.output}</pre></details>)}
+            {builds.length === 0 ? <p>No builds yet.</p> : builds.map((b) => (
+              <details key={b.id}>
+                <summary>#{b.id} · {b.status} · {new Date(b.startedAt).toLocaleString()} {b.revision ? `· ${b.revision.slice(0, 12)}` : ''}</summary>
+                <dl className="break-words">
+                  <dt>Branch</dt>
+                  <dd>{b.branch ?? 'Unknown'}</dd>
+                  <dt>Image</dt>
+                  <dd>{b.image ?? 'Unknown'}</dd>
+                  <dt>Command</dt>
+                  <dd><pre className="whitespace-pre-wrap">{b.command ?? 'Unknown'}</pre></dd>
+                </dl>
+                <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{b.output}</pre>
+              </details>
+            ))}
           </CardContent>
         </Card>}
       </main>}
