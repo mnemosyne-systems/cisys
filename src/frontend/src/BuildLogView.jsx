@@ -55,7 +55,7 @@ export function BuildLogPanel({ api, logPath, build, onRefresh, showMeta = true,
     finally { setLoading(false); }
   }, [api, logPath]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); }, [load, build.status]);
 
   useEffect(() => {
     if (!scrollable || build.status !== 'RUNNING' || !stickToBottom.current) return;
@@ -106,7 +106,7 @@ export function BuildLogPanel({ api, logPath, build, onRefresh, showMeta = true,
       {build.logTruncated && <p className="file-help" role="status">The stored output for this build is incomplete or was cut at the size limit.</p>}
       <div className={title ? 'build-log-actions build-log-header' : 'build-log-actions'}>
         {title && <CardTitle className="mr-auto">{title}</CardTitle>}
-        {build.status === 'RUNNING' && <Button type="button" variant="outline" size="sm" onClick={refresh} disabled={loading}><RefreshCw/> Refresh</Button>}
+        {['QUEUED', 'RUNNING'].includes(build.status) && <Button type="button" variant="outline" size="sm" onClick={refresh} disabled={loading}><RefreshCw/> Refresh</Button>}
         <Button type="button" variant="outline" size="icon-sm" onClick={download} title="Download log" aria-label="Download log"><Download size={16} aria-hidden="true"/></Button>
       </div>
       {error && <p className="file-help" role="alert">{error}</p>}

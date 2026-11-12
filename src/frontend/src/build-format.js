@@ -21,6 +21,7 @@ export function branchFromSegment(segment) {
 
 /** Human-readable build duration, shared by the builds table, build page and log view. */
 export function duration(build) {
+  if (build.status === 'QUEUED') return 'queued';
   if (!build.finishedAt) return 'running';
   if (!build.startedAt) return 'unknown';
   const seconds = Math.max(0, Math.round((new Date(build.finishedAt) - new Date(build.startedAt)) / 1000));

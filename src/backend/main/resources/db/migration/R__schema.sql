@@ -83,3 +83,8 @@ CREATE TABLE IF NOT EXISTS settings (
     retentionmaxbuilds integer NOT NULL DEFAULT 50,
     CONSTRAINT settings_pkey PRIMARY KEY (id)
 );
+
+-- Queue requests are durable; startedAt remains null until claimed.
+ALTER TABLE build ADD COLUMN IF NOT EXISTS requestedat timestamp(6) with time zone;
+ALTER TABLE build ADD COLUMN IF NOT EXISTS repositoryurl character varying(2048);
+CREATE INDEX IF NOT EXISTS build_queue_order ON build (requestedat, id) WHERE status = 'QUEUED';

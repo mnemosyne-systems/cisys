@@ -17,18 +17,18 @@ import java.time.Instant;
 
 /**
  * Deletes, per project, the finished unpinned builds that are older than the maximum age or beyond the newest
- * maximum count. Running and pinned builds are never deleted. Logs go with their build (lo_manage trigger).
+ * maximum count. Queued, running and pinned builds are never deleted. Logs go with their build (lo_manage trigger).
  */
 @ApplicationScoped
 public class BuildRetention {
     static final int BATCH = 500;
 
     private static final String DELETE = """
-            delete from build where status <> 'RUNNING' and not pinned and id in (
+            delete from build where status in ('PASSED', 'FAILED') and not pinned and id in (
                 select id from (
                     select id, coalesce(finishedat, startedat) as at, row_number() over (
                         partition by projectid order by coalesce(finishedat, startedat) desc nulls last, id desc) as n
-                    from build where status <> 'RUNNING' and not pinned) eligible
+                    from build where status in ('PASSED', 'FAILED') and not pinned) eligible
                 where n > :maxBuilds or at < :cutoff
                 limit :batch)
             """;

@@ -57,7 +57,7 @@ async function api(path, opts = {}) {
     const body = await response.json().catch(() => null);
     if (body?.error) throw Object.assign(new Error(body.error), { status: response.status });
   }
-  if (!response.ok) throw Object.assign(new Error(response.status === 409 ? 'Another build is running. Try again when it finishes.' : `Request failed (${response.status}). Check the branch, image and project access.`), { status: response.status });
+  if (!response.ok) throw Object.assign(new Error(response.status === 429 ? 'The build queue is full. Try again later.' : `Request failed (${response.status}). Check the branch, image and project access.`), { status: response.status });
   if (opts.raw) return response;
   if (response.status === 204) return null;
   return response.json();

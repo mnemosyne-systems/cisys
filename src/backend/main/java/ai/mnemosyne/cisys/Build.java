@@ -14,7 +14,10 @@ import java.time.Instant;
 @Entity public class Build extends PanacheEntity {
  public Long projectId;
  public String requestedBy;
- public String status;
+ public enum Status { QUEUED, RUNNING, PASSED, FAILED }
+ @Enumerated(EnumType.STRING) public Status status;
+ public Instant requestedAt;
+ @Column(length=2048) public String repositoryUrl;
  public String revision;
  public String branch;
  public String image;

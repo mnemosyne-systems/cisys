@@ -21,8 +21,9 @@ class RunnerSmokeTest {
  @Test void publicRepositoryBuildCompletes() throws Exception {
   Long project=QuarkusTransaction.requiringNew().call(()->{Project p=new Project();p.name="smoke";p.repositoryUrl="https://github.com/octocat/Hello-World.git";p.ownerSubject="test";p.persist();return p.id;});
   Build created=runner.submit(project,"test","https://github.com/octocat/Hello-World.git",new BuildResource.RunRequest("master","alpine:3.23","test -f README && echo cisys-green",null));
+  runner.dispatch();
   long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.MINUTES.toNanos(2);
-  while(System.nanoTime()<deadline){Build b=QuarkusTransaction.requiringNew().call(()->Build.findById(created.id));if(!"RUNNING".equals(b.status)){String log=logs.readAll(b.id);assertEquals("PASSED",b.status,log);assertTrue(log.contains("cisys-green"));assertNotNull(b.revision);assertEquals(0,b.exitCode);assertEquals("master",b.branch);assertEquals("alpine:3.23",b.image);return;}Thread.sleep(500);}
+  while(System.nanoTime()<deadline){Build b=QuarkusTransaction.requiringNew().call(()->Build.findById(created.id));if(!(b.status==Build.Status.RUNNING || b.status==Build.Status.QUEUED)){String log=logs.readAll(b.id);assertEquals(Build.Status.PASSED,b.status,log);assertTrue(log.contains("cisys-green"));assertNotNull(b.revision);assertEquals(0,b.exitCode);assertEquals("master",b.branch);assertEquals("alpine:3.23",b.image);return;}Thread.sleep(500);}
   fail("Build did not finish within two minutes");
  }
 }

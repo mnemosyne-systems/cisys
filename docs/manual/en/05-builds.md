@@ -25,7 +25,11 @@ Members can view build history and logs for the projects they can access. Privat
 4. The command runs in a writable copy of the checkout under `/tmp/build`.
 5. The status is `PASSED` when the exit code is 0, otherwise `FAILED`. A build that exceeds ten minutes is killed and reported as timed out.
 
-Only one build runs at a time; starting another returns "Runner busy". If the server restarts during a build, that build is marked `FAILED` and the output stored so far is kept.
+Build requests are stored as `QUEUED` and claimed in request order. By default one build runs at a time. Set `BUILD_CONCURRENCY` (`cisys.build.concurrency`) to change the number of concurrent builds and `BUILD_QUEUE_LIMIT` (`cisys.build.queue-limit`, default 100) to limit waiting requests. Both limits must be positive. A full queue returns HTTP 429 with a clear error. Requests keep their repository URL, branch, image, command and credential reference; credentials themselves are read from the environment when execution begins.
+
+If saving a completed result fails, the runner retains it in memory and retries on each dispatcher tick without rerunning the build. Its slot stays reserved until the result is saved.
+
+On restart, interrupted `RUNNING` builds become `FAILED` and retain their partial logs. `QUEUED` builds remain queued and run when a slot is available. Queued and running builds are protected from retention cleanup and prevent project deletion. This runner supports one backend instance; startup recovery assumes the previous instance has stopped.
 
 ## What a build records
 

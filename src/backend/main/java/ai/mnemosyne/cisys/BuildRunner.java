@@ -46,39 +46,94 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
   for(String dir:System.getenv().getOrDefault("PATH","").split(File.pathSeparator)){if(!dir.isEmpty()&&Files.isExecutable(Path.of(dir,program)))return true;}
   return false;
  }
- private final AtomicBoolean busy=new AtomicBoolean();
- /** For tests: whether a build is running. */
- AtomicBoolean busy(){return busy;}
- private final ExecutorService executor=Executors.newSingleThreadExecutor();
+ @ConfigProperty(name="cisys.build.concurrency",defaultValue="1") int concurrency;
+ @ConfigProperty(name="cisys.build.queue-limit",defaultValue="100") int queueLimit;
+ private final ExecutorService executor=Executors.newCachedThreadPool();
+ private final Map<Long,Completion> completions=new ConcurrentHashMap<>();
+ record Completion(Long id,Build.Status status,String revision,Integer exitCode,String imageDigest,
+                   boolean logTruncated,Instant finishedAt){}
+ /** Keep the result until its transaction commits; retry persistence, never execution. */
+ void complete(Completion result){
+  completions.put(result.id(),result);
+  retryCompletions();
+ }
+ private synchronized void retryCompletions(){
+  for(Completion result:completions.values()){
+   try{
+    QuarkusTransaction.requiringNew().run(()->persistCompletion(result));
+    completions.remove(result.id(),result);
+   }catch(RuntimeException e){Log.errorf(e,"Could not save result for build %d; will retry",result.id());}
+  }
+ }
+ /** Called inside a fresh transaction, also when retrying a failed commit. */
+ void persistCompletion(Completion r){
+  Build.update("status = ?1, revision = ?2, exitCode = ?3, imageDigest = ?4, logTruncated = ?5, finishedAt = ?6 where id = ?7 and status = ?8",
+      r.status(),r.revision(),r.exitCode(),r.imageDigest(),r.logTruncated(),r.finishedAt(),r.id(),Build.Status.RUNNING);
+ }
+ private volatile boolean ready;
+ private volatile boolean stopping;
+ /** Serialize admission and claims in the database, including the capacity check. */
+ static void lockQueue(){
+  Build.getEntityManager().createNativeQuery("select 1 from pg_advisory_xact_lock(1128878931)").getSingleResult();
+ }
  void recover(@Observes StartupEvent event){
-  List<Long> running=QuarkusTransaction.requiringNew().call(()->Build.<Build>list("status","RUNNING").stream().map(b->b.id).toList());
+  if(concurrency<1 || queueLimit<1)throw new IllegalArgumentException("Build concurrency and queue limit must be positive");
+  List<Long> running=QuarkusTransaction.requiringNew().call(()->Build.<Build>list("status",Build.Status.RUNNING).stream().map(b->b.id).toList());
   for(Long id:running){
    Throwable failure=logs.appendLine(id,"Server restarted during build");
    if(failure!=null)Log.errorf(failure,"Could not append to the log of build %d",id);
-   String set=failure!=null?"status = 'FAILED', finishedAt = ?1, logTruncated = true where id = ?2":"status = 'FAILED', finishedAt = ?1 where id = ?2";
-   QuarkusTransaction.requiringNew().run(()->Build.update(set,Instant.now(),id));
+   QuarkusTransaction.requiringNew().run(()->{
+    Build b=Build.findById(id);b.status=Build.Status.FAILED;b.finishedAt=Instant.now();
+    if(failure!=null)b.logTruncated=true;
+   });
   }
+  ready=true;
  }
  Build submit(Long projectId,String actor,String url,BuildResource.RunRequest request){
-  if(!busy.compareAndSet(false,true))throw new WebApplicationException("Runner busy",409);
-  try {
-   Build build=QuarkusTransaction.requiringNew().call(()->{
-    Build b=new Build();
-    b.projectId=projectId;
-    b.requestedBy=actor;
-    b.status="RUNNING";
-    b.startedAt=Instant.now();
-    b.branch=request.branch();
-    b.image=request.image();
-    b.command=request.command();
-    b.credentialRef=request.credentialRef();
-    b.persist();
-    return b;
-   });
-   executor.submit(()->run(build.id,url,request));
-   return build;
-  } catch(RuntimeException e){busy.set(false);throw e;}
+  return QuarkusTransaction.requiringNew().call(()->{
+   lockQueue();
+   if(Project.findById(projectId)==null)throw new jakarta.ws.rs.NotFoundException();
+   if(Build.count("status",Build.Status.QUEUED)>=queueLimit)throw new WebApplicationException(jakarta.ws.rs.core.Response.status(429).type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON).entity(Map.of("error","Build queue is full. Try again later.")).build());
+   Build b=new Build();
+   b.projectId=projectId;b.requestedBy=actor;b.status=Build.Status.QUEUED;
+   b.requestedAt=Instant.now();b.repositoryUrl=url;
+   b.branch=request.branch();b.image=request.image();b.command=request.command();b.credentialRef=request.credentialRef();
+   b.persist();return b;
+  });
  }
+ /** Committed RUNNING rows reserve slots before any task is handed to the executor. */
+ Build claim(){
+  return QuarkusTransaction.requiringNew().call(()->{
+   lockQueue();
+   if(Build.count("status",Build.Status.RUNNING)>=concurrency)return null;
+   Build b=Build.<Build>find("status = ?1 order by requestedAt, id",Build.Status.QUEUED).firstResult();
+   if(b==null)return null;
+   int changed=Build.update("status = ?1, startedAt = ?2 where id = ?3 and status = ?4",
+       Build.Status.RUNNING,Instant.now(),b.id,Build.Status.QUEUED);
+   if(changed!=1)return null;
+   Build.getEntityManager().refresh(b);
+   return b;
+  });
+ }
+ @io.quarkus.scheduler.Scheduled(every="1s",concurrentExecution=io.quarkus.scheduler.Scheduled.ConcurrentExecution.SKIP)
+ synchronized void dispatch(){
+  if(!ready || stopping)return;
+  try{
+   retryCompletions();
+   Build b;
+   while((b=claim())!=null){
+    Build task=b;
+    try{executor.submit(()->execute(task));}
+    catch(RejectedExecutionException e){
+     QuarkusTransaction.requiringNew().run(()->Build.update("status = ?1, startedAt = null where id = ?2 and status = ?3",Build.Status.QUEUED,task.id,Build.Status.RUNNING));
+     throw e;
+    }
+   }
+  }catch(RuntimeException e){Log.error("Build queue dispatch failed; will retry",e);}
+ }
+ void execute(Build b){run(b.id,b.repositoryUrl,new BuildResource.RunRequest(b.branch,b.image,b.command,b.credentialRef));}
+ /** For tests waiting for the queue to drain. */
+ boolean hasPendingBuilds(){return QuarkusTransaction.requiringNew().call(()->Build.count("status in ?1",List.of(Build.Status.QUEUED,Build.Status.RUNNING))>0);}
  private void run(Long id,String url,BuildResource.RunRequest request){
   Path dir=null;String name="cisys-build-"+id,revision=null,status="FAILED",digest=null;Integer exit=null;boolean truncated=false;Throwable captureError=null;BuildLogs.Writer log=null;
   try {
@@ -125,8 +180,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
     }
    }catch(Throwable t){if(captureError==null)captureError=t;}
    if(captureError!=null){truncated=true;Log.errorf(captureError,"Log capture failed for build %d",id);}
-   String result=status,sha=revision,image=digest;Integer code=exit;boolean cut=truncated;
-   try{QuarkusTransaction.requiringNew().run(()->{Build b=Build.findById(id);b.status=result;b.revision=sha;b.exitCode=code;b.imageDigest=image;b.logTruncated=cut;b.finishedAt=Instant.now();});}finally{busy.set(false);}
+   complete(new Completion(id,Build.Status.valueOf(status),revision,exit,digest,truncated,Instant.now()));
   }
  }
  record LocalImage(String name,String id,String size,String created){}
@@ -203,5 +257,5 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  }
 
  static void delete(Path dir)throws IOException{try(var files=Files.walk(dir)){for(Path f:files.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(f);}}
- @PreDestroy void stop(){executor.shutdownNow();}
+ @PreDestroy synchronized void stop(){stopping=true;executor.shutdownNow();}
 }

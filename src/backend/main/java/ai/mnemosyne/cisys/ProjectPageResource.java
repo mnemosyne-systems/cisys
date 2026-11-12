@@ -36,7 +36,7 @@ public class ProjectPageResource {
 
     public record ProjectInfo(Long id, String name, String repositoryUrl, boolean privateRepository) {}
     /** Leaves out who requested the build and any credential reference, as the page may be anonymous. */
-    public record PageBuild(Long id, Long projectId, String status, String revision, String branch, String image,
+    public record PageBuild(Long id, Long projectId, Build.Status status, String revision, String branch, String image,
                             String command, Instant startedAt, Instant finishedAt, String imageDigest, Integer exitCode,
                             boolean logTruncated, boolean pinned, boolean canPin) {}
     public record ProjectPage(ProjectInfo project, List<PageBuild> builds) {}

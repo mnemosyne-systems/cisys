@@ -143,7 +143,7 @@ class ProjectResourceTest {
     }
     private static Long build(Long project, String status) {
         return QuarkusTransaction.requiringNew().call(() -> {
-            Build b = new Build(); b.projectId = project; b.requestedBy = "lead-id"; b.status = status; b.branch = "main";
+            Build b = new Build(); b.projectId = project; b.requestedBy = "lead-id"; b.status=Build.Status.valueOf(status); b.branch = "main";
             b.persist(); return b.id;
         });
     }
@@ -177,12 +177,21 @@ class ProjectResourceTest {
     }
     @Test @TestSecurity(user = "admin", roles = "admin")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+    void queuedBuildPreventsProjectDeletion() {
+        Long id=project("other-id",true),queued=build(id,"QUEUED");
+        try {
+            given().delete("/api/projects/"+id).then().statusCode(409).body("error",containsString("queued"));
+            assertTrue(exists(id));
+        } finally {QuarkusTransaction.requiringNew().run(()->Build.deleteById(queued));}
+    }
+    @Test @TestSecurity(user = "admin", roles = "admin")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
     void adminDeletesAnyProjectButNotWhileBuilding() {
         Long id = project("other-id", true);
         Long running = build(id, "RUNNING");
         given().when().delete("/api/projects/" + id).then().statusCode(409).body("error", containsString("running"));
         assertTrue(exists(id));
-        QuarkusTransaction.requiringNew().run(() -> Build.<Build>findById(running).status = "PASSED");
+        QuarkusTransaction.requiringNew().run(() -> Build.<Build>findById(running).status=Build.Status.PASSED);
         given().when().delete("/api/projects/" + id).then().statusCode(204);
         assertFalse(exists(id));
         given().when().delete("/api/projects/" + id).then().statusCode(404);

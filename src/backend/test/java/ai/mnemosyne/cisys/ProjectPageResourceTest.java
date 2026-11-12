@@ -42,7 +42,7 @@ class ProjectPageResourceTest {
             p.persist();
             Build b = new Build();
             b.projectId = p.id;
-            b.status = "PASSED";
+            b.status=Build.Status.PASSED;
             b.branch = "main";
             b.requestedBy = "owner-id";
             b.credentialRef = "CISYS_GIT_SECRET";
@@ -59,7 +59,7 @@ class ProjectPageResourceTest {
             Project p = Project.<Project>find("name = ?1", projectName).firstResult();
             Build b = new Build();
             b.projectId = p.id;
-            b.status = "PASSED";
+            b.status=Build.Status.PASSED;
             b.branch = branch;
             b.persist();
         });

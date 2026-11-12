@@ -30,6 +30,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 /** Tests share one database and run in any order, so counts are compared before and after each change. */
 @QuarkusTest
 class StatsResourceTest {
+ @org.junit.jupiter.api.AfterEach void releaseSyntheticRunningBuilds(){
+  QuarkusTransaction.requiringNew().run(()->Build.update("status = ?1 where status = ?2 and repositoryUrl is null",Build.Status.FAILED,Build.Status.RUNNING));
+ }
+
     private static final List<String> FIELDS = List.of("projects", "builds", "passed", "failed", "running", "buildsLast7Days");
 
     private static String raw() {
@@ -55,7 +59,7 @@ class StatsResourceTest {
     private static void build(Long projectId, String status, Instant startedAt) {
         QuarkusTransaction.requiringNew().run(() -> {
             Build b = new Build();
-            b.projectId = projectId; b.requestedBy = "stats-owner"; b.status = status; b.startedAt = startedAt;
+            b.projectId = projectId; b.requestedBy = "stats-owner"; b.status=Build.Status.valueOf(status); b.startedAt = startedAt;
             if (!"RUNNING".equals(status)) b.finishedAt = startedAt.plusSeconds(10);
             b.persist();
         });

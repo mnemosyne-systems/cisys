@@ -21,6 +21,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
 class RetentionTest {
+ @org.junit.jupiter.api.AfterEach void releaseSyntheticRunningBuilds(){
+  QuarkusTransaction.requiringNew().run(()->Build.update("status = ?1 where status = ?2 and repositoryUrl is null",Build.Status.FAILED,Build.Status.RUNNING));
+ }
+
     @Inject BuildRetention retention;
     @Inject BuildLogs logs;
 
@@ -42,7 +46,7 @@ class RetentionTest {
         return QuarkusTransaction.requiringNew().call(() -> {
             Build b = new Build();
             b.projectId = project;
-            b.status = status;
+            b.status=Build.Status.valueOf(status);
             b.startedAt = (finishedAt == null ? Instant.now() : finishedAt).minusSeconds(60);
             b.finishedAt = finishedAt;
             b.pinned = pinned;

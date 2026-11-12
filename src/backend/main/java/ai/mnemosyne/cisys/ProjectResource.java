@@ -83,13 +83,14 @@ public class ProjectResource {
     /** Deletes a project and its builds; the database unlinks their logs. Admins, or the lead who owns it. */
     @DELETE @Path("/projects/{id}") @Transactional public Response delete(@PathParam("id") Long id) {
         if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
+        BuildRunner.lockQueue();
         Project p = Project.findById(id);
         boolean admin = identity.hasRole("admin");
         boolean owner = p != null && subject().equals(p.ownerSubject);
         // Private projects the caller cannot see answer 404, as everywhere else.
         if (p == null || (p.privateRepository && !admin && !owner)) throw new NotFoundException();
         if (!admin && !owner) throw new ForbiddenException();
-        if (Build.count("projectId = ?1 and status = 'RUNNING'", id) > 0) throw conflict("A build is running. Delete the project when it finishes.");
+        if (Build.count("projectId = ?1 and status in ('RUNNING', 'QUEUED')", id) > 0) throw conflict("A build is queued or running. Delete the project when its builds finish.");
         Build.delete("projectId", id);
         p.delete();
         return Response.noContent().build();

@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
  }
  private static BuildRunner.Streamed sh(String script,BuildRunner.LogSink sink,long maxBytes)throws Exception{return BuildRunner.stream(List.of("sh","-c",script),60,sink,maxBytes);}
  static Long project(){return QuarkusTransaction.requiringNew().call(()->{Project p=new Project();String n=java.util.UUID.randomUUID().toString();p.name="logs-"+n;p.repositoryUrl="https://github.com/octocat/logs-"+n+".git";p.ownerSubject="owner-id";p.persist();return p.id;});}
- static long newBuild(){Long project=project();return QuarkusTransaction.requiringNew().call(()->{Build b=new Build();b.projectId=project;b.requestedBy="owner-id";b.status="PASSED";b.startedAt=java.time.Instant.now();b.persist();return b.id;});}
+ static long newBuild(){Long project=project();return QuarkusTransaction.requiringNew().call(()->{Build b=new Build();b.projectId=project;b.requestedBy="owner-id";b.status=Build.Status.PASSED;b.startedAt=java.time.Instant.now();b.persist();return b.id;});}
  private static long largeObjectCount(long oid){return QuarkusTransaction.requiringNew().call(()->((Number)Build.getEntityManager().createNativeQuery("select count(*) from pg_largeobject_metadata where oid = cast(?1 as oid)").setParameter(1,oid).getSingleResult()).longValue());}
 
  @Test void streamKeepsLargeOutputComplete()throws Exception{
@@ -136,12 +136,13 @@ import java.util.concurrent.TimeUnit;
   logs.failWrites(true);
   try{
    Build created=runner.submit(project,"owner-id","file:///nonexistent/cisys-"+project,new BuildResource.RunRequest("main","alpine:3.23","true",null));
+   runner.dispatch();
    long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(60);Build b;
-   do{Thread.sleep(100);b=QuarkusTransaction.requiringNew().call(()->Build.findById(created.id));}while("RUNNING".equals(b.status)&&System.nanoTime()<deadline);
-   assertEquals("FAILED",b.status);assertNotNull(b.finishedAt);assertTrue(b.logTruncated);assertNull(b.exitCode);
+   do{Thread.sleep(100);b=QuarkusTransaction.requiringNew().call(()->Build.findById(created.id));}while((b.status==Build.Status.RUNNING || b.status==Build.Status.QUEUED)&&System.nanoTime()<deadline);
+   assertEquals(Build.Status.FAILED,b.status);assertNotNull(b.finishedAt);assertTrue(b.logTruncated);assertNull(b.exitCode);
    assertEquals("main",b.branch);assertEquals("alpine:3.23",b.image);
-   while(runner.busy().get()&&System.nanoTime()<deadline)Thread.sleep(50);
-   assertFalse(runner.busy().get(),"the runner is released");
+   while(runner.hasPendingBuilds()&&System.nanoTime()<deadline)Thread.sleep(50);
+   assertFalse(runner.hasPendingBuilds(),"the runner is released");
   }finally{logs.failWrites(false);}
  }
 }

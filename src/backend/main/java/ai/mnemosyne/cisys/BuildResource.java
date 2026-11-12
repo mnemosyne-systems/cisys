@@ -27,7 +27,7 @@ public class BuildResource {
  @Inject RepositoryUrlValidator repositoryUrls;
  public record RunRequest(String branch, String image, String command, String credentialRef) {}
  /** Who requested the build and the credential reference are returned to admins only. */
- public record BuildResponse(Long id, Long projectId, @JsonInclude(JsonInclude.Include.NON_NULL) String requestedBy, String status,
+ public record BuildResponse(Long id, Long projectId, @JsonInclude(JsonInclude.Include.NON_NULL) String requestedBy, Build.Status status,
      String revision, Instant startedAt, Instant finishedAt, String branch,
      String image, String command, @JsonInclude(JsonInclude.Include.NON_NULL) String credentialRef,
      String imageDigest, Integer exitCode, boolean logTruncated, boolean pinned) {}
