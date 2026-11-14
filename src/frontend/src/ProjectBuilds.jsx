@@ -290,7 +290,6 @@ export default function ProjectBuilds({
                       <th scope="col">Commit</th>
                       <th scope="col">Started</th>
                       <th scope="col">Duration</th>
-                      <th scope="col">Exit</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -340,7 +339,6 @@ export default function ProjectBuilds({
                         </td>
                         <td className="build-meta">{startedAt(b)}</td>
                         <td className="build-meta">{duration(b)}</td>
-                        <td className="build-meta">{b.exitCode ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>

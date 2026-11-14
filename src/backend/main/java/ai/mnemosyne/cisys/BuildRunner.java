@@ -661,6 +661,10 @@ public class BuildRunner {
               limits[0],
               limits[1],
               () -> handle.cancelled);
+      // Shown while the build runs, not only once it finishes.
+      String fetched = revision;
+      QuarkusTransaction.requiringNew()
+          .run(() -> Build.update("revision = ?1 where id = ?2", fetched, id));
       // The workflow on the fetched branch describes the image.
       String text = Workflow.read(workspace);
       if (handle.cancelled) throw new CancellationException();
