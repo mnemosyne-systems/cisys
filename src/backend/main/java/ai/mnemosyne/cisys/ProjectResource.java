@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.regex.Pattern;
+import java.time.Instant;
 import jakarta.persistence.PersistenceException;
 
 @Path("/api") @Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
@@ -29,6 +30,7 @@ import jakarta.persistence.PersistenceException;
 public class ProjectResource {
     @Inject SecurityIdentity identity;
     @Inject RepositoryUrlValidator repositoryUrls;
+    @Inject ProjectAccess access;
     private JsonWebToken token() {
         if (identity.getPrincipal() instanceof JsonWebToken jwt) return jwt;
         throw new NotAuthorizedException("Bearer");
@@ -51,16 +53,16 @@ public class ProjectResource {
         return new ProjectResponse(p.id, p.name, p.repositoryUrl, p.privateRepository, subject().equals(p.ownerSubject),
                 identity.hasRole("admin") ? p.ownerSubject : null);
     }
+
     @GET @Path("/session") public Map<String,Object> session() {
         requireCisysRole();
         return Map.of("username", token().getClaim("preferred_username") == null ? subject() : token().getClaim("preferred_username"), "subject", subject(), "roles", identity.getRoles());
     }
+
     @GET @Path("/projects") public List<ProjectResponse> list() {
-        requireCisysRole();
-        List<Project> projects = identity.hasRole("admin") ? Project.listAll()
-                : Project.list("privateRepository = false or ownerSubject = ?1", subject());
-        return projects.stream().map(this::response).toList();
+        return access.listVisible().stream().map(this::response).toList();
     }
+
     @POST @Path("/projects") @Transactional public Response create(CreateProject input) {
         if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
         if (input == null || input.name() == null || input.name().isBlank() || input.name().length() > 100 || input.repositoryUrl() == null || input.repositoryUrl().length() > 2048) throw new BadRequestException("Name and repository URL are required");
@@ -78,18 +80,18 @@ public class ProjectResource {
         Project p = new Project(); p.name = name; p.repositoryUrl = url; p.privateRepository = input.privateRepository(); p.ownerSubject = subject();
         try { p.persistAndFlush(); }
         catch (PersistenceException e) { throw conflict("A project with this name or repository URL already exists"); }
+        ProjectMembership owner = new ProjectMembership();
+        owner.projectId = p.id;
+        owner.subject = subject();
+        owner.role = ProjectMembership.MembershipRole.OWNER;
+        owner.createdAt = Instant.now();
+        owner.persist();
         return Response.status(201).entity(response(p)).build();
     }
     /** Deletes a project and its builds; the database unlinks their logs. Admins, or the lead who owns it. */
     @DELETE @Path("/projects/{id}") @Transactional public Response delete(@PathParam("id") Long id) {
-        if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
         BuildRunner.lockQueue();
-        Project p = Project.findById(id);
-        boolean admin = identity.hasRole("admin");
-        boolean owner = p != null && subject().equals(p.ownerSubject);
-        // Private projects the caller cannot see answer 404, as everywhere else.
-        if (p == null || (p.privateRepository && !admin && !owner)) throw new NotFoundException();
-        if (!admin && !owner) throw new ForbiddenException();
+        Project p = access.deletable(id);
         if (Build.count("projectId = ?1 and status in ('RUNNING', 'QUEUED')", id) > 0) throw conflict("A build is queued or running. Delete the project when its builds finish.");
         Build.delete("projectId", id);
         p.delete();

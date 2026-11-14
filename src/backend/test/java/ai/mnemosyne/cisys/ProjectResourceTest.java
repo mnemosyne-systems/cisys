@@ -36,6 +36,11 @@ class ProjectResourceTest {
             .when().post("/api/projects").then().statusCode(201)
             .body("owned", equalTo(true), "privateRepository", equalTo(true), "$", not(hasKey("ownerSubject")));
         assertEquals("lead-id", QuarkusTransaction.requiringNew().call(() -> Project.<Project>find("name", "demo").firstResult().ownerSubject));
+        assertEquals(1L, (long) QuarkusTransaction.requiringNew().call(() -> {
+            Project created = Project.<Project>find("name", "demo").firstResult();
+            return ProjectMembership.count("projectId = ?1 and subject = ?2 and role = ?3",
+                    created.id, "lead-id", ProjectMembership.MembershipRole.OWNER);
+        }));
     }
     @Test @TestSecurity(user = "member", roles = "member")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "member-id")})
@@ -44,6 +49,21 @@ class ProjectResourceTest {
         given().when().get("/api/projects").then().statusCode(200)
             .body(inList(id) + ".owned", equalTo(false), inList(id), not(hasKey("ownerSubject")), "ownerSubject", everyItem(nullValue()));
     }
+    @Test @TestSecurity(user = "member", roles = "member")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "member-id")})
+    void memberSeesPrivateProjectTheyBelongTo() {
+        Long id = project("other-id", true);
+        QuarkusTransaction.requiringNew().run(() -> {
+            ProjectMembership m = new ProjectMembership();
+            m.projectId = id;
+            m.subject = "member-id";
+            m.role = ProjectMembership.MembershipRole.MEMBER;
+            m.createdAt = java.time.Instant.now();
+            m.persist();
+        });
+        given().when().get("/api/projects").then().statusCode(200).body("id", hasItem(id.intValue()));
+    }
+
     @Test @TestSecurity(user = "lead", roles = "lead")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
     void leadListMarksOwnProjects() {
@@ -138,7 +158,14 @@ class ProjectResourceTest {
         return QuarkusTransaction.requiringNew().call(() -> {
             Project p = new Project(); String n = java.util.UUID.randomUUID().toString();
             p.name = "delete-" + n; p.repositoryUrl = "https://example.com/delete-" + n; p.ownerSubject = owner; p.privateRepository = priv;
-            p.persist(); return p.id;
+            p.persist();
+            ProjectMembership m = new ProjectMembership();
+            m.projectId = p.id;
+            m.subject = owner;
+            m.role = ProjectMembership.MembershipRole.OWNER;
+            m.createdAt = java.time.Instant.now();
+            m.persist();
+            return p.id;
         });
     }
     private static Long build(Long project, String status) {

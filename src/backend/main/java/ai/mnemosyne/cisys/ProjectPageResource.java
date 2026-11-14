@@ -27,7 +27,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 /**
  * The page of a single project, addressed by its name (for example /cisys/ in the UI).
  * Public projects are readable by anyone, including visitors who are not signed in.
- * Private projects are only readable by their owner and admins; everyone else gets a 404,
+ * Private projects are only readable by their members and admins; everyone else gets a 404,
  * so the existence of a private project is not revealed.
  */
 @Path("/api/project-pages/{name}")
@@ -56,8 +56,8 @@ public class ProjectPageResource {
         List<Build> rows = branchFilter.isEmpty()
                 ? Build.<Build>find("projectId = ?1 order by id desc", p.id).page(0, 50).list()
                 : Build.<Build>find("projectId = ?1 and branch = ?2 order by id desc", p.id, branchFilter).page(0, 50).list();
-        // Whoever may see a private project may also pin its builds.
-        boolean canPin = access.canSeePrivate(p);
+        // Pinning follows the same rule as the pin endpoint: admins, or a lead who owns the project.
+        boolean canPin = access.canPin(p);
         List<PageBuild> builds = rows.stream().map(b -> pageBuild(b, canPin, false)).toList();
         return new ProjectPage(new ProjectInfo(p.id, p.name, p.repositoryUrl, p.privateRepository), builds);
     }
@@ -69,7 +69,7 @@ public class ProjectPageResource {
         Project p = access.visible(name);
         Build b = Build.findById(buildId);
         if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
-        return pageBuild(b, access.canSeePrivate(p), true);
+        return pageBuild(b, access.canPin(p), true);
     }
 
     /** The workflow file is sent for a single build only, as it can be up to 64 KiB. */

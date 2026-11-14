@@ -12,6 +12,7 @@
 
 - Keycloak Single Sign-On (SSO) authentication with 3 roles (Member, Lead, Admin)
 - Persistent project registration with public and private projects
+- Per-project membership with OWNER and MEMBER roles, to share a project with a team
 - Manual Linux builds from a chosen branch, run in a container with Docker or Podman
 - Build history with status, commit ID, timing and output
 - Private Git access through environment-variable credential references

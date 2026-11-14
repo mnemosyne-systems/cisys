@@ -13,7 +13,7 @@ Leads and admins select **Build** next to a branch on a project page. That runs 
 * **Branch**: the branch to fetch
 * **Credential reference** (admins only, optional): see below
 
-Members can view build history and logs for the projects they can access. Private projects and their logs are visible only to their creator and admins.
+Members can view build history and logs for the projects they can access. Private projects and their logs are visible only to their members and admins. Starting a build requires the Lead or Admin role and membership of the project — a project owner adds a lead to the project. Admins can build without membership.
 
 ## How a build runs
 
@@ -48,7 +48,7 @@ The complete output of the build, standard output and standard error together, i
 
 ## Pinned builds
 
-The project's creator and admins can **Pin** a build on its build page, and **Unpin** it again. A pinned build, with its log, is kept permanently; build retention cleanup skips it. Pinned builds are marked with a pin icon in the build history.
+A lead who is the project's OWNER, and admins, can **Pin** a build on its build page, and **Unpin** it again. A pinned build, with its log, is kept permanently; build retention cleanup skips it. Pinned builds are marked with a pin icon in the build history.
 
 ## Build retention
 
