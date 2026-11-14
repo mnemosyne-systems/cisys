@@ -60,6 +60,20 @@ export async function copyLog(api, logPath, sink, wait = sleep) {
 }
 
 /**
+ * The suggested download name: project, branch and build identifier, for example
+ * `cisys-main-1.log`. Characters that are unsafe in file names, such as the `/` in
+ * `feature/x`, become `_`; missing parts are left out.
+ */
+export function logFileName(projectName, build) {
+  return (
+    [projectName, build.branch, build.id]
+      .filter((part) => part != null && part !== "")
+      .map((part) => String(part).replace(/[\\/:*?"<>|\s]+/g, "_"))
+      .join("-") + ".log"
+  );
+}
+
+/**
  * The expanded details and log of one build. Used inline in the signed-in build history
  * and, without the duplicated metadata and inside a scroll box, on the dedicated build page.
  */
@@ -72,6 +86,7 @@ export function BuildLogPanel({
   showMeta = true,
   scrollable = false,
   title,
+  projectName,
 }) {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -191,7 +206,7 @@ export function BuildLogPanel({
 
   async function download() {
     setError("");
-    const name = `build-${build.id}.log`;
+    const name = logFileName(projectName, build);
     try {
       if (window.showSaveFilePicker) {
         // Ask for the file while the click still counts as a user gesture.

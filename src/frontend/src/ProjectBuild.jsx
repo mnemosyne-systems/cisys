@@ -216,6 +216,7 @@ export default function ProjectBuild({
             api={load}
             logPath={`/project-pages/${encodeURIComponent(name)}/builds/${build.id}/log`}
             build={build}
+            projectName={name}
             onRefresh={loadBuild}
             showMeta={false}
             scrollable

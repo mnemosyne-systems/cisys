@@ -1,7 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { BuildLogPanel, copyLog } from "./BuildLogView";
+import { BuildLogPanel, copyLog, logFileName } from "./BuildLogView";
 
 function response(text, size) {
   return {
@@ -177,5 +177,20 @@ describe("BuildLogPanel", () => {
       copyLog(api, "/log", { write: async () => {} }, async () => {}),
     ).rejects.toThrow("Server error");
     expect(api).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("logFileName", () => {
+  it("names the log after the project, branch and build", () => {
+    expect(logFileName("cisys", { id: 1, branch: "main" })).toBe(
+      "cisys-main-1.log",
+    );
+  });
+
+  it("makes a branch with a slash safe and leaves out missing parts", () => {
+    expect(logFileName("cisys", { id: 7, branch: "feature/x" })).toBe(
+      "cisys-feature_x-7.log",
+    );
+    expect(logFileName(undefined, { id: 3 })).toBe("3.log");
   });
 });
