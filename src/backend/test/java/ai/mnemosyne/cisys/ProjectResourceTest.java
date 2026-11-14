@@ -144,7 +144,7 @@ class ProjectResourceTest {
         .statusCode(201);
     given()
         .contentType("application/json")
-        .body("{\"name\":\" Unique-One \",\"repositoryUrl\":\"https://github.com/other.git\"}")
+        .body("{\"name\":\" Unique-ONE \",\"repositoryUrl\":\"https://github.com/other.git\"}")
         .when()
         .post("/api/projects")
         .then()
@@ -158,6 +158,94 @@ class ProjectResourceTest {
         .then()
         .statusCode(409)
         .body("error", containsString("repository URL"));
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void databaseUniqueConstraintMapsToConflict() {
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Project.getEntityManager()
+              .createNativeQuery(
+                  "CREATE FUNCTION test_project_insert_race() RETURNS trigger "
+                      + "LANGUAGE plpgsql AS $$ BEGIN "
+                      + "IF pg_trigger_depth() = 1 THEN "
+                      + "INSERT INTO project (id, name, ownersubject, privaterepository, repositoryurl) "
+                      + "VALUES (nextval('project_seq'), NEW.name || '-race', NEW.ownersubject, "
+                      + "NEW.privaterepository, NEW.repositoryurl); END IF; RETURN NEW; END $$")
+              .executeUpdate();
+          Project.getEntityManager()
+              .createNativeQuery(
+                  "CREATE TRIGGER test_project_insert_race_trigger BEFORE INSERT ON project "
+                      + "FOR EACH ROW EXECUTE FUNCTION test_project_insert_race()")
+              .executeUpdate();
+        });
+    try {
+      given()
+          .contentType("application/json")
+          .body(
+              "{\"name\":\"constraint-race\",\"repositoryUrl\":\"https://github.com/constraint-race\"}")
+          .when()
+          .post("/api/projects")
+          .then()
+          .statusCode(409)
+          .body("error", containsString("name or repository URL"));
+    } finally {
+      QuarkusTransaction.requiringNew()
+          .run(() -> {
+            Project.getEntityManager()
+                .createNativeQuery("DROP TRIGGER test_project_insert_race_trigger ON project")
+                .executeUpdate();
+            Project.getEntityManager()
+                .createNativeQuery("DROP FUNCTION test_project_insert_race()")
+                .executeUpdate();
+          });
+    }
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void databaseNameUniqueIndexMapsToConflict() {
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Project.getEntityManager()
+              .createNativeQuery(
+                  "CREATE FUNCTION test_project_name_insert_race() RETURNS trigger "
+                      + "LANGUAGE plpgsql AS $$ BEGIN "
+                      + "IF pg_trigger_depth() = 1 THEN "
+                      + "INSERT INTO project (id, name, ownersubject, privaterepository, repositoryurl) "
+                      + "VALUES (nextval('project_seq'), upper(NEW.name), NEW.ownersubject, "
+                      + "NEW.privaterepository, NEW.repositoryurl || '-race'); END IF; RETURN NEW; END $$")
+              .executeUpdate();
+          Project.getEntityManager()
+              .createNativeQuery(
+                  "CREATE TRIGGER test_project_name_insert_race_trigger BEFORE INSERT ON project "
+                      + "FOR EACH ROW EXECUTE FUNCTION test_project_name_insert_race()")
+              .executeUpdate();
+        });
+    try {
+      given()
+          .contentType("application/json")
+          .body(
+              "{\"name\":\"constraint-name-race\",\"repositoryUrl\":\"https://github.com/constraint-name-race\"}")
+          .when()
+          .post("/api/projects")
+          .then()
+          .statusCode(409)
+          .body("error", containsString("name or repository URL"));
+    } finally {
+      QuarkusTransaction.requiringNew()
+          .run(() -> {
+            Project.getEntityManager()
+                .createNativeQuery("DROP TRIGGER test_project_name_insert_race_trigger ON project")
+                .executeUpdate();
+            Project.getEntityManager()
+                .createNativeQuery("DROP FUNCTION test_project_name_insert_race()")
+                .executeUpdate();
+          });
+    }
   }
 
   @Test
@@ -468,7 +556,7 @@ class ProjectResourceTest {
             "name",
             equalTo(name),
             "repositoryUrl",
-            equalTo(updatedUrl),
+            equalTo(RepositoryUrls.normalize(updatedUrl)),
             "privateRepository",
             equalTo(true));
   }
@@ -589,10 +677,15 @@ class ProjectResourceTest {
           .put("/api/projects/" + id)
           .then()
           .statusCode(200)
-          .body("name", equalTo(updatedName), "repositoryUrl", equalTo(updatedUrl));
+          .body(
+              "name",
+              equalTo(updatedName),
+              "repositoryUrl",
+              equalTo(RepositoryUrls.normalize(updatedUrl)));
       QuarkusTransaction.requiringNew()
           .run(() -> {
-            assertEquals(updatedUrl, Project.<Project>findById(id).repositoryUrl);
+            assertEquals(
+                RepositoryUrls.normalize(updatedUrl), Project.<Project>findById(id).repositoryUrl);
             assertEquals(originalUrl, Build.<Build>findById(queued).repositoryUrl);
             assertEquals(originalUrl, Build.<Build>findById(running).repositoryUrl);
           });
@@ -646,34 +739,33 @@ class ProjectResourceTest {
   @Test
   @TestSecurity(user = "lead", roles = "lead")
   @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
-  void addsGitSuffix() {
+  void normalizesRepositoryUrlAndRejectsVariants() {
     given()
         .contentType("application/json")
         .body(
-            "{\"name\":\"suffix-added\",\"repositoryUrl\":\"https://github.com/org/suffix-added/\"}")
+            "{\"name\":\"url-variants\",\"repositoryUrl\":\"HTTPS://GITHUB.COM/org/url-variants.git/\"}")
         .when()
         .post("/api/projects")
         .then()
         .statusCode(201)
-        .body("repositoryUrl", equalTo("https://github.com/org/suffix-added.git"));
-    given()
-        .contentType("application/json")
-        .body(
-            "{\"name\":\"suffix-kept\",\"repositoryUrl\":\"https://github.com/org/suffix-kept.git\"}")
-        .when()
-        .post("/api/projects")
-        .then()
-        .statusCode(201)
-        .body("repositoryUrl", equalTo("https://github.com/org/suffix-kept.git"));
-    // The same repository with and without .git is a duplicate.
-    given()
-        .contentType("application/json")
-        .body(
-            "{\"name\":\"suffix-again\",\"repositoryUrl\":\"https://github.com/org/suffix-kept\"}")
-        .when()
-        .post("/api/projects")
-        .then()
-        .statusCode(409);
+        .body("repositoryUrl", equalTo("https://github.com/org/url-variants"));
+    for (String url :
+        new String[] {
+          "https://github.com/org/url-variants/",
+          "https://github.com/org/url-variants.git",
+          "HTTPS://github.com/org/url-variants",
+          "https://GITHUB.COM/org/url-variants"
+        }) {
+      given()
+          .contentType("application/json")
+          .body(
+              "{\"name\":\"url-variant-" + url.hashCode() + "\",\"repositoryUrl\":\"" + url + "\"}")
+          .when()
+          .post("/api/projects")
+          .then()
+          .statusCode(409)
+          .body("error", containsString("repository URL"));
+    }
   }
 
   @Test

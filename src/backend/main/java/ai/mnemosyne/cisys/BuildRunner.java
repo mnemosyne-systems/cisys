@@ -633,7 +633,8 @@ public class BuildRunner {
     try {
       log = logs.open(id);
       // Checked again here because DNS can change after the project was saved.
-      repositoryUrls.validate(url);
+      String cloneUrl = RepositoryUrls.cloneUrl(url);
+      repositoryUrls.validate(cloneUrl);
       UsernamePasswordCredentialsProvider credentials = null;
       if (request.credentialRef() != null) {
         String token = System.getenv(request.credentialRef());
@@ -654,7 +655,7 @@ public class BuildRunner {
       revision =
           Checkout.fetch(
               workspace,
-              url,
+              cloneUrl,
               request.branch(),
               credentials,
               repositoryUrls.verifyTls(url),

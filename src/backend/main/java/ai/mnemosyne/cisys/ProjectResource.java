@@ -25,6 +25,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.eclipse.microprofile.jwt.JsonWebToken;
+import org.hibernate.exception.ConstraintViolationException;
 
 @Path("/api")
 @Produces(MediaType.APPLICATION_JSON)
@@ -157,6 +158,7 @@ public class ProjectResource {
     try {
       p.persistAndFlush();
     } catch (PersistenceException e) {
+      if (!isProjectUniqueViolation(e)) throw e;
       throw conflict("A project with this name or repository URL already exists");
     }
     return Response.status(201).entity(response(p)).build();
@@ -264,7 +266,7 @@ public class ProjectResource {
     if (!admin && input.credentialRef() != null && !input.credentialRef().isBlank())
       throw new ForbiddenException();
     // A lead must not carry the admin-set credential to a new repository.
-    boolean urlChanged = !Objects.equals(p.repositoryUrl, url);
+    boolean urlChanged = !Objects.equals(RepositoryUrls.normalize(p.repositoryUrl), url);
     p.name = name;
     p.repositoryUrl = url;
     p.privateRepository = input.privateRepository();
@@ -279,11 +281,11 @@ public class ProjectResource {
   }
 
   /**
-   * Repository URLs name the Git repository itself: https://github.com/org/repo becomes
-   * https://github.com/org/repo.git.
+   * Repository URLs name the Git repository itself: https://github.com/org/repo.git becomes
+   * https://github.com/org/repo.
    */
   static String gitUrl(String url) {
-    String trimmed = url.replaceAll("/+$", "");
+    String trimmed = RepositoryUrls.normalize(url);
     URI parsed = URI.create(trimmed);
     String path = parsed.getPath();
     if (parsed.getQuery() != null
@@ -292,7 +294,18 @@ public class ProjectResource {
         || path.isEmpty()
         || path.endsWith("/.git"))
       throw badRequest("Use the repository's URL, for example https://github.com/org/repo.git");
-    return path.endsWith(".git") ? trimmed : trimmed + ".git";
+    return trimmed;
+  }
+
+  private static boolean isProjectUniqueViolation(PersistenceException exception) {
+    for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+      if (cause instanceof ConstraintViolationException violation
+          && "23505".equals(violation.getSQLState())
+          && ("uk_project_name".equals(violation.getConstraintName())
+              || "uk_project_name_lower".equals(violation.getConstraintName())
+              || "uk_project_repositoryurl".equals(violation.getConstraintName()))) return true;
+    }
+    return false;
   }
 
   private static WebApplicationException badRequest(String message) {

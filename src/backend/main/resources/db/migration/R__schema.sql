@@ -18,6 +18,30 @@ CREATE TABLE IF NOT EXISTS project (
 
 ALTER TABLE project ADD COLUMN IF NOT EXISTS credentialref character varying(100);
 
+DO $$
+DECLARE
+    conflicts text;
+BEGIN
+    WITH duplicate_names AS (
+        SELECT lower(name) AS normalized_name,
+               string_agg(format('%s (id=%s)', name, id), ', ' ORDER BY id) AS rows
+          FROM project
+         GROUP BY lower(name)
+        HAVING count(*) > 1
+    )
+    SELECT string_agg(format('%s: %s', normalized_name, rows), E'\n' ORDER BY normalized_name)
+      INTO conflicts
+      FROM duplicate_names;
+
+    IF conflicts IS NOT NULL THEN
+        RAISE EXCEPTION
+            'Cannot enforce case-insensitive project names. Resolve these conflicting rows first: %',
+            conflicts;
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_project_name_lower ON project (lower(name));
+
 CREATE SEQUENCE IF NOT EXISTS project_seq START WITH 1 INCREMENT BY 50;
 
 CREATE TABLE IF NOT EXISTS build (

@@ -49,9 +49,10 @@ public class GitRepositoryService {
 
   /** Branches of an HTTPS repository on an allowed host, with the given credential reference. */
   public List<String> listBranches(String repositoryUrl, String credentialRef) {
-    repositoryUrls.validate(repositoryUrl);
+    String cloneUrl = repositoryUrl == null ? null : RepositoryUrls.cloneUrl(repositoryUrl);
+    repositoryUrls.validate(cloneUrl);
     try {
-      return branchNames(remoteBranchRefs(repositoryUrl, credentialRef));
+      return branchNames(remoteBranchRefs(cloneUrl, credentialRef));
     } catch (BranchLookupException e) {
       throw e;
     } catch (GitAPIException | RuntimeException e) {

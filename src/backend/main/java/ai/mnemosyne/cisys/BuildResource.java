@@ -193,7 +193,7 @@ public class BuildResource {
         && !input.credentialRef().matches("CISYS_GIT_[A-Z0-9_]{1,80}"))
       throw new BadRequestException("Invalid credential reference");
     try {
-      repositoryUrls.validate(p.repositoryUrl);
+      repositoryUrls.validate(RepositoryUrls.cloneUrl(p.repositoryUrl));
     } catch (IllegalArgumentException e) {
       throw new BadRequestException(e.getMessage());
     }

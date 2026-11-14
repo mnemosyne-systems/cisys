@@ -110,6 +110,26 @@ class RepositoryUrlValidatorTest {
   }
 
   @Test
+  void normalizesRepositoryUrls() {
+    assertEquals(
+        "https://github.com/octocat/Hello-World",
+        RepositoryUrls.normalize("HTTPS://GITHUB.COM/octocat/Hello-World.git/"));
+    assertEquals(
+        "https://github.com/octocat/Hello-World",
+        RepositoryUrls.normalize("https://github.com/octocat/Hello-World"));
+    assertEquals(
+        "https://github.com/Org/MixedCase",
+        RepositoryUrls.normalize("HTTPS://GITHUB.COM/Org/MixedCase.git"));
+    assertEquals(
+        "https://github.com/octocat/Hello-World",
+        RepositoryUrls.normalize("https://github.com/octocat/Hello-World/.git"));
+    assertEquals("https://github.com/a/b", RepositoryUrls.normalize("https://github.com/a/b/.git"));
+    assertEquals("https://github.com/a/b.git", RepositoryUrls.cloneUrl("https://github.com/a/b"));
+    assertEquals(
+        "https://github.com/a/b.git", RepositoryUrls.cloneUrl("https://github.com/a/b.git"));
+  }
+
+  @Test
   void rejectsBlockedAddresses() {
     for (String address :
         List.of(

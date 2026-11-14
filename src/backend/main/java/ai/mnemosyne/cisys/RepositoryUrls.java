@@ -57,6 +57,40 @@ final class RepositoryUrls {
 
   private RepositoryUrls() {}
 
+  /** Returns the canonical form used for project repository URLs. */
+  static String normalize(String repositoryUrl) {
+    if (repositoryUrl == null) return null;
+    String trimmed = repositoryUrl.trim();
+    URI uri = URI.create(trimmed);
+    String host = uri.getHost();
+    if (uri.getScheme() == null || host == null) return trimmed;
+    String path = uri.getPath();
+    if (path != null) {
+      while (path.endsWith("/")) path = path.substring(0, path.length() - 1);
+      if (path.endsWith(".git")) path = path.substring(0, path.length() - 4);
+      while (path.endsWith("/")) path = path.substring(0, path.length() - 1);
+    }
+    try {
+      return new URI(
+              uri.getScheme().toLowerCase(Locale.ROOT),
+              uri.getUserInfo(),
+              host.toLowerCase(Locale.ROOT),
+              uri.getPort(),
+              path,
+              uri.getQuery(),
+              uri.getFragment())
+          .toString();
+    } catch (java.net.URISyntaxException e) {
+      throw new IllegalArgumentException(SHAPE, e);
+    }
+  }
+
+  /** Adds the Git suffix at the clone/fetch boundary while preserving already suffixed URLs. */
+  static String cloneUrl(String repositoryUrl) {
+    String trimmed = repositoryUrl.replaceAll("/+$", "");
+    return trimmed.endsWith(".git") ? trimmed : trimmed + ".git";
+  }
+
   static void validate(
       String repositoryUrl,
       Set<String> allowedHosts,
