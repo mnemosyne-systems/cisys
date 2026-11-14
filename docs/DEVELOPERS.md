@@ -71,7 +71,7 @@ See [BUILDING.md](BUILDING.md) for the current development, build, test and fron
 Cisys uses **Keycloak** for sign-in and bearer-token authentication.
 
 * The frontend is a public client (`cisys-ui`) using the authorization-code flow with PKCE.
-* The backend is a Quarkus OIDC `service` application. It reads roles from the access token claim `realm_access/roles` and uses the immutable `sub` claim as the principal and project owner.
+* The backend is a Quarkus OIDC `service` application. It reads roles from the access token claim `realm_access/roles` and uses the immutable `sub` claim as the principal, as the project owner (`owner_subject`), and for the `project_membership` rows.
 * The realm roles are `member`, `lead` and `admin`.
 
 The development realm is `contrib/keycloak/realm.json`. It is imported on the first Keycloak start only.
@@ -212,7 +212,7 @@ But they are not actually lost - using `git reflog`, you can find every commit t
 ## Verification status
 
 * Backend tests (`mvn test`) and the frontend lint and production build pass in the development workspace.
-* Keycloak 26.8.2 tokens for Member, Lead and Admin, and private-project visibility, were tested through the REST API against a real local Keycloak and PostgreSQL 18 on 2026-11-07.
+* Keycloak 26.8.2 tokens for Member, Lead and Admin, and private-project visibility, were tested through the REST API against a real local Keycloak and PostgreSQL 18 on 2026-11-07. Project membership, member management and the global-role × visibility × membership matrix were tested in the backend suite on 2026-11-14.
 * An opt-in smoke test fetches the public `octocat/Hello-World` repository via JGit and runs an Alpine container through Docker: `CISYS_RUNNER_SMOKE=true mvn -Dtest=RunnerSmokeTest test`.
 * Not yet verified: a real private Git provider, Podman, Windows/WSL, and the full Compose stack end to end.
 

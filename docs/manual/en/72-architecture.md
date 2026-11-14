@@ -15,7 +15,7 @@ The sources are in `src/backend/main/java/ai/mnemosyne/cisys`.
 * `BuildRetention` is a [scheduled](https://quarkus.io/guides/scheduler) job that deletes each project's expired, unpinned builds in batches with one SQL statement per batch; the `lo_manage` trigger removes their logs.
 * Authentication uses [Quarkus OIDC](https://quarkus.io/guides/security-oidc-bearer-token-authentication) in `service` mode with Keycloak realm roles.
 
-Quarkus configuration is in `src/backend/main/resources/application.properties`. The schema is managed by [Flyway](https://quarkus.io/guides/flyway) migrations in `src/backend/main/resources/db/migration`, applied at startup; Hibernate only validates it. Databases created before migrations existed are adopted automatically. Until the 1.0 release the whole schema is one repeatable migration, `R__schema.sql`, which is changed in place and must stay idempotent; Flyway reruns it whenever it changes, so existing databases never need a manual reset.
+Quarkus configuration is in `src/backend/main/resources/application.properties`. The schema is managed by [Flyway](https://quarkus.io/guides/flyway) migrations in `src/backend/main/resources/db/migration`, applied at startup; Hibernate only validates it. Databases created before migrations existed are adopted automatically. Until the 1.0 release the whole schema is one repeatable migration, `R__schema.sql`, which is changed in place and must stay idempotent; Flyway reruns it whenever it changes. It only adds schema and does not convert existing data, so after a change that needs existing rows converted, the database must be recreated with `make reset`. Project membership is such a change: projects created before it have no `OWNER` membership.
 
 ## Frontend
 
@@ -74,6 +74,16 @@ erDiagram
     }
 
     PROJECT ||--o{ BUILD : has
+
+    PROJECT_MEMBERSHIP {
+        BIGINT id PK
+        BIGINT project_id
+        STRING subject
+        STRING role
+        TIMESTAMP created_at
+    }
+
+    PROJECT ||--o{ PROJECT_MEMBERSHIP : has
 ```
 
-Users and roles are managed in Keycloak; `owner_subject` and `requested_by` hold the Keycloak subject.
+Users and roles are managed in Keycloak; `owner_subject`, `requested_by` and `project_membership.subject` hold the Keycloak subject. Each project has exactly one `OWNER` member — its creator — and any number of `MEMBER` members; membership is resolved to user names at the membership API boundary, subjects are never exposed to other users.

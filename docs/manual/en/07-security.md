@@ -50,7 +50,7 @@ These credentials, HTTP, and Keycloak development mode are for a trusted local m
 
 ## Authorization
 
-Private projects and their build logs are visible only to their creator and admins. Starting builds requires the Lead or Admin role. Changing branding, and using Git credential references, require the Admin role. The full endpoint mapping is in `docs/SECURITY.md`.
+Private projects and their build logs are visible only to their members and admins. Starting builds requires the Lead or Admin role and membership of the project — admins may build without membership. Changing branding, and using Git credential references, require the Admin role. The endpoint mapping is in `docs/SECURITY.md`.
 
 ## Build runner
 

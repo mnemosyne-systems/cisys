@@ -12,6 +12,7 @@ It provides sign-in through Keycloak, three roles, project registration with pub
 
 * Keycloak Single Sign-On (SSO) authentication with 3 roles (Member, Lead, Admin)
 * Persistent project registration with public and private projects
+* Per-project membership with OWNER and MEMBER roles; owners and admins manage project members
 * Manual Linux builds from a chosen branch, run in a container through Docker or Podman
 * Build history with status, commit ID, timing and output
 * Private Git access through environment-variable credential references
@@ -22,8 +23,8 @@ It provides sign-in through Keycloak, three roles, project registration with pub
 ## Roles
 
 * **Members** can view public projects and the build history of projects they can access.
-* **Leads** can additionally create projects and start manual builds.
-* **Admins** can see every project, change the branding, and use credential references for private Git.
+* **Leads** can additionally create projects and start manual builds on projects they are members of.
+* **Admins** can see every project, start and pin builds without membership, change the branding, and use credential references for private Git.
 
 ## Project handling
 
@@ -31,7 +32,7 @@ Each project keeps
 
 * A name and an HTTPS repository URL
 * A private flag, which controls project and build-log visibility
-* The owner, recorded as the Keycloak subject
+* The OWNER member (the creator) and any MEMBER members, who can see private projects and their builds
 
 ## Build handling
 

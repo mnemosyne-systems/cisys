@@ -98,3 +98,21 @@ ALTER TABLE build ADD COLUMN IF NOT EXISTS workflow character varying(65536);
 -- Null uses the configured queue limits.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxconcurrentbuilds integer;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxqueuedbuilds integer;
+
+-- Project membership: one row per user per project; at most one OWNER row per project.
+CREATE TABLE IF NOT EXISTS projectmembership (
+    id bigint NOT NULL,
+    projectid bigint NOT NULL,
+    subject character varying(255) NOT NULL,
+    role character varying(16) NOT NULL,
+    createdat timestamp(6) with time zone NOT NULL,
+    CONSTRAINT projectmembership_pkey PRIMARY KEY (id),
+    CONSTRAINT fk_membership_project FOREIGN KEY (projectid) REFERENCES project(id) ON DELETE CASCADE,
+    CONSTRAINT uk_membership_project_subject UNIQUE (projectid, subject)
+);
+
+CREATE SEQUENCE IF NOT EXISTS projectmembership_seq START WITH 1 INCREMENT BY 50;
+
+CREATE UNIQUE INDEX IF NOT EXISTS one_owner_per_project ON projectmembership (projectid) WHERE role = 'OWNER';
+
+CREATE INDEX IF NOT EXISTS membership_by_subject ON projectmembership (subject);

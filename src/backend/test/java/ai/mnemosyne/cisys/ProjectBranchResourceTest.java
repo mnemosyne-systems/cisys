@@ -47,6 +47,12 @@ class ProjectBranchResourceTest {
             p.ownerSubject = "owner-id";
             p.privateRepository = priv;
             p.persist();
+            ProjectMembership m = new ProjectMembership();
+            m.projectId = p.id;
+            m.subject = "owner-id";
+            m.role = ProjectMembership.MembershipRole.OWNER;
+            m.createdAt = java.time.Instant.now();
+            m.persist();
             return name;
         });
     }

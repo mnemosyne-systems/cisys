@@ -45,6 +45,12 @@ class ProjectPageResourceTest {
             p.ownerSubject = "owner-id";
             p.privateRepository = priv;
             p.persist();
+            ProjectMembership m = new ProjectMembership();
+            m.projectId = p.id;
+            m.subject = "owner-id";
+            m.role = ProjectMembership.MembershipRole.OWNER;
+            m.createdAt = java.time.Instant.now();
+            m.persist();
             Build b = new Build();
             b.projectId = p.id;
             b.status=Build.Status.PASSED;
@@ -262,6 +268,52 @@ class ProjectPageResourceTest {
     @Test
     void unknownProjectIsNotFound() {
         given().get("/api/project-pages/does-not-exist-" + UUID.randomUUID()).then().statusCode(404);
+    }
+
+    @Test
+    @TestSecurity(user = "member", roles = "member")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "member-id"))
+    void memberSeesPrivateProjectPage() {
+        String name = project(true);
+        QuarkusTransaction.requiringNew().run(() -> {
+            Project p = Project.<Project>find("name", name).firstResult();
+            ProjectMembership m = new ProjectMembership();
+            m.projectId = p.id;
+            m.subject = "member-id";
+            m.role = ProjectMembership.MembershipRole.MEMBER;
+            m.createdAt = java.time.Instant.now();
+            m.persist();
+        });
+        given().get("/api/project-pages/" + name).then().statusCode(200);
+    }
+
+    @Test
+    @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "lead-member-id"))
+    void projectMemberGetsNoPinButton() {
+        Seeded s = seed(true);
+        QuarkusTransaction.requiringNew().run(() -> {
+            Project p = Project.<Project>find("name", s.name()).firstResult();
+            ProjectMembership m = new ProjectMembership();
+            m.projectId = p.id;
+            m.subject = "lead-member-id";
+            m.role = ProjectMembership.MembershipRole.MEMBER;
+            m.createdAt = java.time.Instant.now();
+            m.persist();
+        });
+        given().get("/api/project-pages/" + s.name()).then().statusCode(200)
+                .body("builds", hasSize(1), "builds[0].canPin", equalTo(false));
+        given().get("/api/project-pages/" + s.name() + "/builds/" + s.buildId()).then().statusCode(200)
+                .body("canPin", equalTo(false));
+    }
+
+    @Test
+    @TestSecurity(user = "member", roles = "member")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
+    void memberRoleOwnerGetsNoPinButton() {
+        Seeded s = seed(false);
+        given().get("/api/project-pages/" + s.name() + "/builds/" + s.buildId()).then().statusCode(200)
+                .body("canPin", equalTo(false));
     }
 
     @Test

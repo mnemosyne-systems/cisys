@@ -11,6 +11,7 @@ Shashank Singh <shashanksgh3@gmail.com>
 Jesper Pedersen <jesperpedersen.db@gmail.com>
 Adnan Khan <adnan.kriaz@gmail.com>
 Mohamed Hamed <alkmohamed40@gmail.com>
+Yousuf Mahmoud <yusufmahmoud.dev@gmail.com>
 ```
 
 ## Contributing

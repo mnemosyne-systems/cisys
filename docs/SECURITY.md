@@ -21,13 +21,16 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | Endpoint                                  | Member                    | Lead                 | Admin |
 | :---------------------------------------- | :------------------------ | :------------------- | :---- |
 | `GET /api/session`                        | yes                       | yes                  | yes   |
-| `GET /api/projects`                       | public projects           | public and own       | all   |
+| `GET /api/projects`                       | public projects and private projects they belong to | public projects and private projects they belong to       | all   |
 | `POST /api/projects`                      | no                        | yes                  | yes   |
 | `GET /api/projects/{id}/builds[/{id}]`    | visible projects          | visible projects     | all   |
 | `GET /api/projects/{id}/branches`         | visible projects          | visible projects     | all   |
-| `POST /api/projects/{id}/builds`          | no                        | yes                  | yes   |
+| `POST /api/projects/{id}/builds`          | no                        | project members      | yes   |
 | `POST` build with a `credentialRef`       | no                        | no                   | yes   |
-| `PUT`/`DELETE .../builds/{id}/pin`        | no                        | own projects         | yes   |
+| `PUT`/`DELETE .../builds/{id}/pin`        | no                        | leads who own the project | yes   |
+| `GET /api/projects/{id}/members`          | project members           | project members      | yes   |
+| `POST /api/projects/{id}/members`         | project owners            | project owners       | yes   |
+| `DELETE /api/projects/{id}/members/{username}` | project owners        | project owners       | yes   |
 | `GET /api/branding`                       | yes                       | yes                  | yes   |
 | `PUT /api/branding`                       | no                        | no                   | yes   |
 | `GET`/`PUT /api/settings/retention`       | no                        | no                   | yes   |
@@ -36,9 +39,17 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `PUT /api/images`                         | no                        | no                   | yes   |
 | `GET/POST/DELETE /api/images/local`       | no                        | no                   | yes   |
 
-Without signing in, `GET /api/branding/public`, `GET /api/branding/logo`, `GET /api/stats/public`, the public project page (`GET /api/project-pages/{name}`, `GET /api/project-pages/{name}/builds/{buildId}` and its build logs) and `GET /api/project-pages/{name}/branches` for public projects are readable. The project page accepts an optional `branch` query parameter, which filters the builds but applies the same public/private visibility rules. The statistics are aggregate counts computed from public projects only (public projects, their builds by status, success rate, last build time). Private projects and their builds are left out of every number, and no names, repository URLs, logs or users are exposed. The server caches the result for `STATS_CACHE_SECONDS` (default 30) seconds. The branch endpoint returns remote branch names for public projects. For private projects it requires the same owner/admin access as the page and returns only the branches that already have builds, so the private repository is never read; anonymous callers and users without access receive `404`.
+Without signing in, `GET /api/branding/public`, `GET /api/branding/logo`, `GET /api/stats/public`, the public project page (`GET /api/project-pages/{name}`, `GET /api/project-pages/{name}/builds/{buildId}` and its build logs) and `GET /api/project-pages/{name}/branches` for public projects are readable. The project page accepts an optional `branch` query parameter, which filters the builds but applies the same public/private visibility rules. The statistics are aggregate counts computed from public projects only (public projects, their builds by status, success rate, last build time). Private projects and their builds are left out of every number, and no names, repository URLs, logs or users are exposed. The server caches the result for `STATS_CACHE_SECONDS` (default 30) seconds. The branch endpoint returns remote branch names for public projects. For private projects it requires the same member/admin access as the page and returns only the branches that already have builds, so the private repository is never read; anonymous callers and users without access receive `404`.
 
-Private projects (and their build history and logs) are visible only to their creator and admins. Ownership is recorded with the immutable Keycloak subject (`sub`), not the user name. A project that is not visible to the caller is reported as `404 Not Found`.
+Private projects (and their build history and logs) are visible only to their members and to admins. Membership is recorded with the immutable Keycloak subject (`sub`), not the user name. A project always has exactly one `OWNER` member — the project's creator — and any number of `MEMBER` members. A project that is not visible to the caller is reported as `404 Not Found`.
+
+### Project membership
+
+* Every project has exactly one `OWNER` member, its creator, recorded atomically when the project is created. Other members hold the `MEMBER` role. Ownership cannot be transferred or removed through the API; removing the `OWNER` answers `409 Conflict`.
+* Starting builds requires the Lead or Admin role, and a project membership; admins bypass membership. Editing a project and pinning its builds require the Lead role and being the project's `OWNER`, or the Admin role. Apart from member management by the `OWNER`, project membership never grants permissions the caller's global role does not allow — the global role decides what you can do, membership decides on which projects.
+* Listing members (`GET /api/projects/{id}/members`) requires being a member of the project, or an admin. Adding (`POST`) and removing (`DELETE`) members requires being the project's `OWNER`, whatever the global role, or an admin. Only the `MEMBER` role is assignable; the `OWNER` role is never assignable through the membership API, and raw subject IDs are never exposed — the API accepts and returns usernames.
+* Member-management endpoints resolve usernames to Keycloak through the `cisys-backend` service account; the membership endpoints only read users, but the account holds Keycloak's `manage-users` role, which signing users out on shutdown needs, so keep its secret protected.
+* `ownerSubject` is kept as a denormalized pointer for the `owned` flag and for admins; project membership is the source of truth for authorization.
 
 User subjects are returned to admins only:
 
