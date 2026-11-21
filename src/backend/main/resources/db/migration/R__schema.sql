@@ -295,6 +295,7 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS mirrormanualbuilds boolean NOT NUL
 -- A null baseline means the next discovery seeds the current pull requests without building them.
 ALTER TABLE project ADD COLUMN IF NOT EXISTS pullrequestprovider character varying(20);
 ALTER TABLE project ADD COLUMN IF NOT EXISTS pullrequestbaseline integer;
+ALTER TABLE project ADD COLUMN IF NOT EXISTS cachepaths character varying(2100);
 
 -- A pull request build stores the provider and number that created it, never deriving them later.
 ALTER TABLE build ADD COLUMN IF NOT EXISTS pullrequest integer;

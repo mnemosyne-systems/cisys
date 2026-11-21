@@ -49,6 +49,8 @@ public class ProjectResource {
   @Inject SecurityIdentity identity;
   @Inject RepositoryUrlValidator repositoryUrls;
   @Inject RepositoryMirror mirrors;
+
+  @Inject ProjectCache caches;
   @Inject ProjectAccess access;
 
   private JsonWebToken token() {
@@ -85,9 +87,13 @@ public class ProjectResource {
   public record CreateProject(
       String name, String repositoryUrl, boolean privateRepository, String credentialRef) {}
 
-  /** The new values of a project. */
+  /** The new values of a project. A null {@code cachePaths}, from an older client, keeps them. */
   public record UpdateProject(
-      String name, String repositoryUrl, boolean privateRepository, String credentialRef) {}
+      String name,
+      String repositoryUrl,
+      boolean privateRepository,
+      String credentialRef,
+      List<String> cachePaths) {}
 
   /** A project's credential reference. */
   public record Credential(String credentialRef) {}
@@ -103,7 +109,8 @@ public class ProjectResource {
       boolean privateRepository,
       boolean owned,
       @JsonInclude(JsonInclude.Include.NON_NULL) String ownerSubject,
-      String credentialRef) {}
+      String credentialRef,
+      List<String> cachePaths) {}
 
   private ProjectResponse response(Project p) {
     return new ProjectResponse(
@@ -113,7 +120,8 @@ public class ProjectResource {
         p.privateRepository,
         subject().equals(p.ownerSubject),
         identity.hasRole("admin") ? p.ownerSubject : null,
-        identity.hasRole("admin") ? p.credentialRef : null);
+        identity.hasRole("admin") ? p.credentialRef : null,
+        ProjectCache.paths(p.cachePaths));
   }
 
   /** The signed-in user's name, subject and roles. */
@@ -284,6 +292,7 @@ public class ProjectResource {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
+    caches.delete(id);
     if (locked) {
       try {
         mirrors.delete(id);
@@ -346,11 +355,20 @@ public class ProjectResource {
     if (!admin && input.credentialRef() != null && !input.credentialRef().isBlank()) {
       throw new ForbiddenException();
     }
+    String cachePaths = p.cachePaths;
+    if (input.cachePaths() != null) {
+      try {
+        cachePaths = ProjectCache.setting(input.cachePaths());
+      } catch (IllegalArgumentException e) {
+        throw badRequest(e.getMessage());
+      }
+    }
     // A lead must not carry the admin-set credential to a new repository.
     boolean urlChanged = !Objects.equals(RepositoryUrls.normalize(p.repositoryUrl), url);
     p.name = name;
     p.repositoryUrl = url;
     p.privateRepository = input.privateRepository();
+    p.cachePaths = cachePaths;
     if (admin) {
       p.credentialRef = credential(input.privateRepository(), input.credentialRef());
     } else if (urlChanged || !input.privateRepository()) {
@@ -367,6 +385,7 @@ public class ProjectResource {
       ProjectPullRequest.delete("projectId", id);
       p.pullRequestProvider = null;
       p.pullRequestBaseline = null;
+      caches.delete(id);
     }
     return Response.ok(response(p)).build();
   }

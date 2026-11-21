@@ -72,6 +72,35 @@ describe("ProjectSettings", () => {
     );
   });
 
+  it("saves the cached paths, one per line", async () => {
+    const saved = { ...project(), cachePaths: [".m2/repository", ".npm"] };
+    const api = vi.fn(async () => saved);
+    render(
+      <ProjectSettings
+        project={project()}
+        api={api}
+        isAdmin={false}
+        onSaved={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Cached paths"), {
+      target: { value: ".m2/repository\n.npm" },
+    });
+    fireEvent.submit(document.getElementById("project-settings-form"));
+    await vi.waitFor(() => expect(api).toHaveBeenCalled());
+    const [, init] = api.mock.calls.find(([path]) => path === "/projects/1");
+    expect(JSON.parse(init.body).cachePaths).toEqual([
+      ".m2/repository",
+      ".npm",
+    ]);
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText("Cached paths").value).toBe(
+        ".m2/repository\n.npm",
+      ),
+    );
+  });
+
   it("saves the project from the repository card only", async () => {
     const saved = { ...project(), name: "renamed" };
     const api = vi.fn(async () => saved);

@@ -349,6 +349,14 @@ public record Workflow(
   static final String WORKSPACE = "workspace";
 
   /**
+   * The directory in the build context that holds the project's cache, see {@link ProjectCache}.
+   */
+  static final String CACHE = "cache";
+
+  /** Where the last step leaves the cached paths for the runner to take out of the image. */
+  static final String SAVED_CACHE = "/cisys-cache";
+
+  /**
    * The Containerfile that builds this workflow's image from the local image {@code baseId}, which
    * {@link ImageReference#resolve} found for {@code container}; see {@link #containerfile(String,
    * int)}.
@@ -361,7 +369,16 @@ public record Workflow(
    * As {@link #containerfile(String)}, with the steps given the egress proxy when {@code network}.
    */
   public String containerfile(String baseId, boolean network) {
-    return containerfile(baseId, network, WAIT_SECONDS);
+    return containerfile(baseId, network, List.of());
+  }
+
+  /**
+   * As {@link #containerfile(String, boolean)}, with the project's {@code cache}: paths relative to
+   * the home directory that are copied in from {@value #CACHE} in the build context and, when every
+   * step passed, moved to {@value #SAVED_CACHE}.
+   */
+  public String containerfile(String baseId, boolean network, List<String> cache) {
+    return containerfile(baseId, network, WAIT_SECONDS, true, true, cache);
   }
 
   String containerfile(String baseId, int waitSeconds) {
@@ -423,7 +440,7 @@ public record Workflow(
    * {@link #PROXY}.
    */
   String containerfile(String baseId, boolean network, int waitSeconds) {
-    return containerfile(baseId, network, waitSeconds, true, true);
+    return containerfile(baseId, network, waitSeconds, true, true, List.of());
   }
 
   /**
@@ -455,11 +472,16 @@ public record Workflow(
    * this file has no per-{@code RUN} flags.
    */
   String stepsContainerfile(String preparedImage, boolean network, int waitSeconds) {
-    return containerfile(preparedImage, network, waitSeconds, false, false);
+    return containerfile(preparedImage, network, waitSeconds, false, false, List.of());
   }
 
   String stepsContainerfile(String preparedImage, boolean network) {
-    return stepsContainerfile(preparedImage, network, WAIT_SECONDS);
+    return stepsContainerfile(preparedImage, network, List.of());
+  }
+
+  /** As {@link #stepsContainerfile(String, boolean)}, with the project's {@code cache}. */
+  String stepsContainerfile(String preparedImage, boolean network, List<String> cache) {
+    return containerfile(preparedImage, network, WAIT_SECONDS, false, false, cache);
   }
 
   private String containerfile(
@@ -467,7 +489,8 @@ public record Workflow(
       boolean network,
       int waitSeconds,
       boolean installToolsAndDependencies,
-      boolean perRunNetworkFlags) {
+      boolean perRunNetworkFlags,
+      List<String> cache) {
     if (installToolsAndDependencies && !baseId.matches(BASE)) {
       throw new IllegalArgumentException("Not an image ID: " + baseId);
     }
@@ -513,7 +536,17 @@ public record Workflow(
           "environment",
           exports());
     }
-    run(f, readable, "", "mkdir -p /workspace && chown " + BUILD_USER + " /workspace", "workspace");
+    run(
+        f,
+        readable,
+        "",
+        "mkdir -p /workspace && chown "
+            + BUILD_USER
+            + " /workspace"
+            + (cache.isEmpty()
+                ? ""
+                : " && mkdir -p " + SAVED_CACHE + " && chown " + BUILD_USER + " " + SAVED_CACHE),
+        "workspace");
     f.append("USER ").append(BUILD_USER).append('\n');
     f.append("WORKDIR /workspace\n");
     f.append("ENV HOME=/tmp GIT_TERMINAL_PROMPT=0\n");
@@ -522,6 +555,9 @@ public record Workflow(
         .append(' ')
         .append(WORKSPACE)
         .append(" /workspace\n");
+    if (!cache.isEmpty()) {
+      f.append("COPY --chown=").append(BUILD_USER).append(' ').append(CACHE).append(" /tmp\n");
+    }
     List<String> runs = runs(waitSeconds);
     for (int i = 0; i < runs.size(); i++) {
       run(
@@ -533,7 +569,7 @@ public record Workflow(
               + " || exit 1\n"
               + (network ? PROXY : "")
               + runs.get(i)
-              + (i == runs.size() - 1 ? CLEAN_UP : ""),
+              + (i == runs.size() - 1 ? saveCache(cache) + CLEAN_UP : ""),
           "step");
     }
     checkSize(f);
@@ -550,6 +586,28 @@ public record Workflow(
       "echo '==> Removing the files the steps wrote'\n"
           + "find /workspace /tmp /var/tmp -mindepth 1 -delete 2>/dev/null\n"
           + "exit 0\n";
+
+  /**
+   * Moves the cached paths that exist from the home directory to {@value #SAVED_CACHE}, before
+   * {@link #CLEAN_UP} deletes them. Only the last step runs it, so only a build whose steps all
+   * passed saves its cache.
+   */
+  static String saveCache(List<String> cache) {
+    if (cache.isEmpty()) {
+      return "";
+    }
+    StringBuilder s = new StringBuilder("echo '==> Saving the cache'\nfor p in");
+    for (String p : cache) {
+      s.append(' ').append(quote(p));
+    }
+    return s.append(
+            "; do if [ -e \"$HOME/$p\" ]; then mkdir -p \""
+                + SAVED_CACHE
+                + "/$(dirname \"$p\")\" && mv \"$HOME/$p\" \""
+                + SAVED_CACHE
+                + "/$p\" || echo \"==> Could not save $p\"; fi; done\n")
+        .toString();
+  }
 
   private static void checkSize(StringBuilder file) {
     if (file.length() > MAX_CONTAINERFILE) {

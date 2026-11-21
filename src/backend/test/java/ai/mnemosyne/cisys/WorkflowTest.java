@@ -80,6 +80,29 @@ class WorkflowTest {
   }
 
   @Test
+  void aCachedBuildCopiesTheCacheInAndSavesItAfterTheLastStep() {
+    Workflow w = Workflow.parse(VALID);
+    String id = "0".repeat(64);
+    String plain = w.containerfile(id, false);
+    String cached = w.containerfile(id, false, List.of(".m2/repository", ".npm"));
+    assertFalse(plain.contains("cisys-cache"), plain);
+    assertFalse(plain.contains("COPY --chown=65534:65534 cache /tmp"), plain);
+    assertTrue(cached.contains("mkdir -p /cisys-cache && chown 65534:65534 /cisys-cache"), cached);
+    assertTrue(
+        cached.indexOf("COPY --chown=65534:65534 cache /tmp")
+            > cached.indexOf("COPY --chown=65534:65534 workspace /workspace"),
+        cached);
+    assertEquals(1, cached.split("Saving the cache", -1).length - 1, cached);
+    assertTrue(
+        cached.indexOf("Saving the cache") < cached.indexOf("Removing the files the steps wrote"),
+        cached);
+    assertTrue(cached.contains("for p in '.m2/repository' '.npm';"), cached);
+    String steps = w.stepsContainerfile("prepared", false, List.of(".m2"));
+    assertTrue(steps.contains("COPY --chown=65534:65534 cache /tmp"), steps);
+    assertTrue(steps.contains("Saving the cache"), steps);
+  }
+
+  @Test
   void parsesWorkflow() {
     Workflow w = Workflow.parse(VALID);
     assertEquals("main branch", w.name());

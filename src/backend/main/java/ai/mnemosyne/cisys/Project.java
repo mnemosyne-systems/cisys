@@ -37,4 +37,11 @@ public class Project extends PanacheEntity {
 
   /** The highest pull request number present when the feature was enabled; null means seed next. */
   public Integer pullRequestBaseline;
+
+  /**
+   * Paths relative to the build's home directory kept between builds, one per line; see {@link
+   * ProjectCache}. Null keeps nothing.
+   */
+  @Column(length = 2100)
+  public String cachePaths;
 }

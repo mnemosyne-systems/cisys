@@ -60,6 +60,8 @@ public class BuildRunner {
   @Inject RepositoryUrlValidator repositoryUrls;
   @Inject RepositoryMirror mirrors;
 
+  @Inject ProjectCache caches;
+
   @ConfigProperty(name = "cisys.build.log-max-bytes", defaultValue = "1073741824")
   long logMaxBytes;
 
@@ -910,7 +912,8 @@ public class BuildRunner {
         pullRequest ? null : b.credentialRef,
         b.revision,
         mirrorFor(b),
-        pullRequest);
+        pullRequest,
+        b.projectId);
   }
 
   /**
@@ -1143,7 +1146,8 @@ public class BuildRunner {
       String credentialRef,
       String expectedRevision,
       Path localMirror,
-      boolean requireLocalMirror) {
+      boolean requireLocalMirror,
+      Long projectId) {
     Path dir = null;
     String name = "cisys-build-" + id,
         prepare = name + "-prepare",
@@ -1188,6 +1192,20 @@ public class BuildRunner {
               limits[1],
               () -> handle.cancelled,
               requireLocalMirror);
+      // Read when the build starts, like the limits. A pull request build reads the cache but never
+      // saves it, so code from a pull request cannot change what later builds start from.
+      List<String> cache =
+          projectId == null
+              ? List.of()
+              : QuarkusTransaction.requiringNew()
+                  .call(() -> {
+                    Project p = Project.findById(projectId);
+                    return p == null ? List.<String>of() : ProjectCache.paths(p.cachePaths);
+                  });
+      if (!cache.isEmpty()) {
+        caches.copyIn(projectId, context.resolve(Workflow.CACHE));
+        log.line("Cached paths: " + String.join(", ", cache));
+      }
       // Shown while the build runs, not only once it finishes.
       String fetched = revision;
       QuarkusTransaction.requiringNew()
@@ -1226,15 +1244,15 @@ public class BuildRunner {
                   + " is image "
                   + from.id()
                   + ", tagged for this build\n"
-                  + workflow.containerfile(baseTag(id), !allowlist.isEmpty())
-              : workflow.containerfile(from.id(), !allowlist.isEmpty());
+                  + workflow.containerfile(baseTag(id), !allowlist.isEmpty(), cache)
+              : workflow.containerfile(from.id(), !allowlist.isEmpty(), cache);
       // Stored before it runs, so the build page shows what ran, also when it failed.
       String shown =
           podman
               ? containerfile
               : dockerfiles(
                   workflow.prepareContainerfile(from.id(), !allowlist.isEmpty()),
-                  workflow.stepsContainerfile(prepare, !allowlist.isEmpty()));
+                  workflow.stepsContainerfile(prepare, !allowlist.isEmpty(), cache));
       QuarkusTransaction.requiringNew()
           .run(() -> Build.update("dockerfile = ?1 where id = ?2", shown, id));
       log.line(
@@ -1308,7 +1326,7 @@ public class BuildRunner {
           Path file =
               Files.writeString(
                   dir.resolve("Dockerfile"),
-                  workflow.stepsContainerfile(prepare, !allowlist.isEmpty()));
+                  workflow.stepsContainerfile(prepare, !allowlist.isEmpty(), cache));
           List<String> build = buildCommand(file, name, limits);
           build.add("--network=none");
           build.add(context.toString());
@@ -1354,6 +1372,9 @@ public class BuildRunner {
         // The image build stops at the first failing RUN and exits with its exit code.
         exit = result.code();
         status = exit == 0 ? "PASSED" : "FAILED";
+        if (exit == 0 && !cache.isEmpty() && !requireLocalMirror && !handle.cancelled) {
+          saveCache(projectId, name, dir, log::line);
+        }
       }
       if (!handle.cancelled) {
         runReports(id, workflow, workspace, log::line);
@@ -1520,6 +1541,47 @@ public class BuildRunner {
           Log.warnf(ex, "Report %s of build %d failed", name, id);
           log.accept("Report " + name + " failed: " + ex.getClass().getSimpleName());
         }
+      }
+    }
+  }
+
+  /**
+   * Takes {@value Workflow#SAVED_CACHE} out of the build's image and makes it the project's cache.
+   * A cache that cannot be saved is noted in the log; it does not change the build's result.
+   */
+  void saveCache(Long projectId, String image, Path dir, java.util.function.Consumer<String> log) {
+    String container = image + "-cache";
+    try {
+      Result created =
+          command(List.of(runtime, "create", "--name", container, image, "true"), 60, 4096);
+      if (created.code() != 0) {
+        throw new IOException("create exited with " + created.code());
+      }
+      Path saved = dir.resolve("saved-cache");
+      Result copied =
+          command(
+              List.of(
+                  runtime, "cp", container + ":" + Workflow.SAVED_CACHE + "/.", saved.toString()),
+              600,
+              4096);
+      if (copied.code() != 0) {
+        throw new IOException("cp exited with " + copied.code());
+      }
+      if (caches.save(projectId, saved)) {
+        log.accept("Cache saved");
+      } else {
+        log.accept(
+            "Cache not saved: larger than "
+                + caches.maxMib
+                + " MiB; an admin can change cisys.cache.max-mib");
+      }
+    } catch (Exception e) {
+      Log.warnf(e, "Could not save the cache of project %d", projectId);
+      log.accept("Cache not saved: " + e.getMessage());
+    } finally {
+      try {
+        command(List.of(runtime, "rm", "-f", container), 60, 4096);
+      } catch (Exception ignored) {
       }
     }
   }

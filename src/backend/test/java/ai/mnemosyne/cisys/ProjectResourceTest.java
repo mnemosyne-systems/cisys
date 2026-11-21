@@ -488,6 +488,57 @@ class ProjectResourceTest {
   @Test
   @TestSecurity(user = "admin", roles = "admin")
   @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+  void cachedPathsAreSavedKeptByOlderClientsAndChecked() {
+    String repo =
+        "\"repositoryUrl\":\"https://github.com/org/cached.git\",\"privateRepository\":false";
+    int id =
+        given()
+            .contentType("application/json")
+            .body("{\"name\":\"cached\"," + repo + "}")
+            .when()
+            .post("/api/projects")
+            .then()
+            .statusCode(201)
+            .extract()
+            .path("id");
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"cached\"," + repo + ",\"cachePaths\":[\".m2/repository\",\" \",\".npm\"]}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("cachePaths", equalTo(java.util.List.of(".m2/repository", ".npm")));
+    given()
+        .contentType("application/json")
+        .body("{\"name\":\"cached\"," + repo + "}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("cachePaths", equalTo(java.util.List.of(".m2/repository", ".npm")));
+    given()
+        .contentType("application/json")
+        .body("{\"name\":\"cached\"," + repo + ",\"cachePaths\":[\"../etc\"]}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(400)
+        .body("error", containsString("relative to the home directory"));
+    given()
+        .contentType("application/json")
+        .body("{\"name\":\"cached\"," + repo + ",\"cachePaths\":[]}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("cachePaths", equalTo(java.util.List.of()));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
   void adminChangesAndClearsTheCredential() {
     int id =
         given()
