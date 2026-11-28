@@ -98,6 +98,45 @@ describe("BuildArtifacts", () => {
     click.mockRestore();
   });
 
+  it("clears previous artifacts and errors when switching builds", async () => {
+    const load = vi.fn((path) => {
+      if (path === "/project-pages/p/builds/1/artifacts") {
+        return Promise.resolve(LIST);
+      }
+      if (path === "/project-pages/p/builds/2/artifacts") {
+        return Promise.reject(
+          Object.assign(new Error("Request failed (404)"), { status: 404 }),
+        );
+      }
+      if (path === "/project-pages/p/builds/3/artifacts") {
+        return Promise.reject(
+          Object.assign(new Error("Server error"), { status: 500 }),
+        );
+      }
+      return Promise.resolve({ truncated: false, files: [] });
+    });
+
+    const { rerender } = render(
+      <BuildArtifacts name="p" buildId={1} load={load} />,
+    );
+    expect(await screen.findByText("target/app.jar")).toBeTruthy();
+
+    rerender(<BuildArtifacts name="p" buildId={2} load={load} />);
+    await waitFor(() =>
+      expect(load).toHaveBeenCalledWith("/project-pages/p/builds/2/artifacts"),
+    );
+    expect(screen.queryByText("target/app.jar")).toBeNull();
+
+    rerender(<BuildArtifacts name="p" buildId={3} load={load} />);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+
+    rerender(<BuildArtifacts name="p" buildId={4} load={load} />);
+    await waitFor(() =>
+      expect(load).toHaveBeenCalledWith("/project-pages/p/builds/4/artifacts"),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("formats sizes", () => {
     expect(formatSize(10)).toBe("10 B");
     expect(formatSize(1536)).toBe("1.5 KiB");

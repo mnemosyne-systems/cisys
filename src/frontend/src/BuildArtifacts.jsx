@@ -22,26 +22,34 @@ export function formatSize(bytes) {
  * who are not signed in get a 401 and see nothing.
  */
 export default function BuildArtifacts({ name, buildId, load }) {
-  const [artifacts, setArtifacts] = useState(null);
-  const [error, setError] = useState("");
+  const [state, setState] = useState({ base: "", artifacts: null, error: "" });
   const base = `/project-pages/${encodeURIComponent(name)}/builds/${buildId}/artifacts`;
 
   useEffect(() => {
     let live = true;
     load(base)
-      .then((r) => live && setArtifacts(r))
+      .then((r) => live && setState({ base, artifacts: r, error: "" }))
       .catch((e) => {
-        if (live && e.status !== 401 && e.status !== 404) {
-          setError(e.message || "Unable to load the artifacts.");
-        }
+        if (!live) return;
+        setState({
+          base,
+          artifacts: null,
+          error:
+            e.status !== 401 && e.status !== 404
+              ? e.message || "Unable to load the artifacts."
+              : "",
+        });
       });
     return () => {
       live = false;
     };
   }, [load, base]);
 
+  const artifacts = state.base === base ? state.artifacts : null;
+  const error = state.base === base ? state.error : "";
+
   async function download(path, fallback) {
-    setError("");
+    setState((s) => ({ ...s, error: "" }));
     try {
       const response = await load(path, {
         raw: true,
@@ -56,7 +64,7 @@ export default function BuildArtifacts({ name, buildId, load }) {
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (e) {
-      setError(e.message);
+      setState((s) => ({ ...s, error: e.message }));
     }
   }
 
