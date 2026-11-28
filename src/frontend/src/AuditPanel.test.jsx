@@ -453,4 +453,17 @@ describe("AuditPanel", () => {
     expect(screen.getByText(/"which": "second"/)).toBeTruthy();
     expect(screen.queryByText(/"which": "first"/)).toBeNull();
   });
+
+  it("includes TEAM, TEAM_MEMBER, and REPORT_PLUGIN target type filters", async () => {
+    const load = vi.fn(() => Promise.resolve({ total: 0, events: [] }));
+    render(<AuditPanel api={load} />);
+    await waitFor(() => expect(listCalls(load).length).toBeGreaterThan(0));
+
+    for (const target of ["TEAM", "TEAM_MEMBER", "REPORT_PLUGIN"]) {
+      await choose("Target type", target);
+      await waitFor(() =>
+        expect(lastQuery(load).get("targetType")).toBe(target),
+      );
+    }
+  });
 });
